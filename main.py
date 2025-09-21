@@ -141,9 +141,6 @@ def webhook(token):
             except Exception as e:
                 send_message(chat_id, f"⚠️ Error processing link: {e}")
 
-        else:
-            send_message(chat_id, "Send me a valid Pixeldrain link like https://pixeldrain.com/l/ID or /u/ID")
-
     return jsonify(ok=True)
 
 def send_welcome(chat_id, username, user_id):
