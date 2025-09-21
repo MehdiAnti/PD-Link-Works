@@ -101,45 +101,45 @@ def webhook(token):
             "I’ll reply with direct download links and thumbnails."
         )
         send_message(chat_id, help_text)
-else:
-    # Extract all valid Pixeldrain links
-    links = re.findall(r"https://pixeldrain\.com/(l|u)/[A-Za-z0-9]+", text)
-
-    if not links:
-        send_message(chat_id, "Send me a valid Pixeldrain link like https://pixeldrain.com/l/ID or /u/ID")
-    elif len(links) > 1:
-        send_message(chat_id, "⚠️ Please send only **one Pixeldrain link** at a time.")
     else:
-        # Only one link, process it
-        link = links[0]
-        try:
-            files = process_pixeldrain_link(link)
-            if not files:
-                send_message(chat_id, "⚠️ No files found in this link.")
-            else:
-                response_lines = []
-                for i, f in enumerate(files, 1):
-                    line = (
-                        f"{i}. ID: {f['file_id']}\n"
-                        f"   File: {f['file_url']}\n"
-                        f"   Thumbnail: {f['thumbnail_url']}"
-                    )
-                    response_lines.append(line)
-
-                # Split message if too long
-                chunk_size = 3500
-                message = ""
-                for line in response_lines:
-                    line_text = line + "\n\n"
-                    if len(message) + len(line_text) > chunk_size:
+        # Extract all valid Pixeldrain links
+        links = re.findall(r"https://pixeldrain\.com/(l|u)/[A-Za-z0-9]+", text)
+    
+        if not links:
+            send_message(chat_id, "Send me a valid Pixeldrain link like https://pixeldrain.com/l/ID or /u/ID")
+        elif len(links) > 1:
+            send_message(chat_id, "⚠️ Please send only **one Pixeldrain link** at a time.")
+        else:
+            # Only one link, process it
+            link = links[0]
+            try:
+                files = process_pixeldrain_link(link)
+                if not files:
+                    send_message(chat_id, "⚠️ No files found in this link.")
+                else:
+                    response_lines = []
+                    for i, f in enumerate(files, 1):
+                        line = (
+                            f"{i}. ID: {f['file_id']}\n"
+                            f"   File: {f['file_url']}\n"
+                            f"   Thumbnail: {f['thumbnail_url']}"
+                        )
+                        response_lines.append(line)
+    
+                    # Split message if too long
+                    chunk_size = 3500
+                    message = ""
+                    for line in response_lines:
+                        line_text = line + "\n\n"
+                        if len(message) + len(line_text) > chunk_size:
+                            send_message(chat_id, message)
+                            message = line_text
+                        else:
+                            message += line_text
+                    if message:
                         send_message(chat_id, message)
-                        message = line_text
-                    else:
-                        message += line_text
-                if message:
-                    send_message(chat_id, message)
-        except Exception as e:
-            send_message(chat_id, f"⚠️ Error processing link: {e}")
+            except Exception as e:
+                send_message(chat_id, f"⚠️ Error processing link: {e}")
 
         else:
             send_message(chat_id, "Send me a valid Pixeldrain link like https://pixeldrain.com/l/ID or /u/ID")
