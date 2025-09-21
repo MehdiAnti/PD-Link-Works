@@ -35,14 +35,11 @@ def extract_files_from_viewer_data(html_text):
     match = re.search(pattern, html_text, re.DOTALL)
     if not match:
         return []
-
     json_text = match.group(1)
     try:
         data = json.loads(json_text)
         files = data.get("api_response", {}).get("files", [])
         results = []
-
-        # Skip the first file (gallery itself)
         for f in files[1:]:
             file_id = f.get("id")
             if not file_id:
@@ -57,14 +54,11 @@ def extract_files_from_viewer_data(html_text):
         return []
 
 def process_pixeldrain_link(link):
-    links = re.findall(r"(https://pixeldrain\.com/(?:l|u)/[A-Za-z0-9]+)", text)
+    match = re.search(r"https://pixeldrain\.com/(l|u)/([A-Za-z0-9]+)", link)
     if not match:
         return []
-
     link_type, link_id = match.groups()
-
     if link_type == "u":
-        # Direct single file
         return [{
             "file_id": link_id,
             "file_url": f"https://pixeldrain.com/api/file/{link_id}",
@@ -78,21 +72,16 @@ def process_pixeldrain_link(link):
 def webhook(token):
     if token != TELEGRAM_TOKEN:
         return "forbidden", 403
-
     update = request.get_json(force=True)
     msg = update.get("message", {})
     chat_id = msg.get("chat", {}).get("id")
     text = msg.get("text", "")
-    username = msg.get("from", {}).get("first_name", "there")
-
     if not chat_id:
         return jsonify(ok=False), 400
-
     if text == "/start":
         user_id = msg.get("from", {}).get("id")
         username = msg.get("from", {}).get("first_name", "there")
         send_welcome(chat_id, username, user_id)
-
     elif text == "/help":
         help_text = (
             "Send a valid Pixeldrain link in this format:\n"
@@ -102,15 +91,12 @@ def webhook(token):
         )
         send_message(chat_id, help_text)
     else:
-        # Extract all valid Pixeldrain links
-        links = re.findall(r"https://pixeldrain\.com/(l|u)/[A-Za-z0-9]+", text)
-    
+        links = re.findall(r"(https://pixeldrain\.com/(?:l|u)/[A-Za-z0-9]+)", text)
         if not links:
             send_message(chat_id, "Send me a valid Pixeldrain link like https://pixeldrain.com/l/ID or /u/ID")
         elif len(links) > 1:
             send_message(chat_id, "⚠️ Please send only **one Pixeldrain link** at a time.")
         else:
-            # Only one link, process it
             link = links[0]
             try:
                 files = process_pixeldrain_link(link)
@@ -125,8 +111,6 @@ def webhook(token):
                             f"   Thumbnail: {f['thumbnail_url']}"
                         )
                         response_lines.append(line)
-    
-                    # Split message if too long
                     chunk_size = 3500
                     message = ""
                     for line in response_lines:
@@ -140,7 +124,6 @@ def webhook(token):
                         send_message(chat_id, message)
             except Exception as e:
                 send_message(chat_id, f"⚠️ Error processing link: {e}")
-
     return jsonify(ok=True)
 
 def send_welcome(chat_id, username, user_id):
