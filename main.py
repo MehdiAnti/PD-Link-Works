@@ -57,7 +57,7 @@ def extract_files_from_viewer_data(html_text):
         return []
 
 def process_pixeldrain_link(link):
-    match = re.search(r"https://pixeldrain\.com/(l|u)/([A-Za-z0-9]+)", link)
+    links = re.findall(r"(https://pixeldrain\.com/(?:l|u)/[A-Za-z0-9]+)", text)
     if not match:
         return []
 
