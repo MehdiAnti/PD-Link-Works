@@ -89,12 +89,10 @@ def webhook(token):
         return jsonify(ok=False), 400
 
     if text == "/start":
-        welcome = (
-            f"Hello {username}!\n\n"
-            "Send your Pixeldrain URL to get the direct link(s) and thumbnail(s).\n"
-            "Example: https://pixeldrain.com/l/ID or /u/ID"
-        )
-        send_message(chat_id, welcome)
+        user_id = msg.get("from", {}).get("id")
+        username = msg.get("from", {}).get("first_name", "there")
+        send_welcome(chat_id, username, user_id)
+
     elif text == "/help":
         help_text = (
             "Send a valid Pixeldrain link in this format:\n"
@@ -103,17 +101,22 @@ def webhook(token):
             "I’ll reply with direct download links and thumbnails."
         )
         send_message(chat_id, help_text)
-    else:
-        # Extract first valid Pixeldrain link only
-        match = re.search(r"https://pixeldrain\.com/(l|u)/[A-Za-z0-9]+", text)
-        if match:
-            link = match.group(0)
-            try:
-                files = process_pixeldrain_link(link)
-                if not files:
-                    send_message(chat_id, "⚠️ No files found in this link.")
-                    return jsonify(ok=True)
+else:
+    # Extract all valid Pixeldrain links
+    links = re.findall(r"https://pixeldrain\.com/(l|u)/[A-Za-z0-9]+", text)
 
+    if not links:
+        send_message(chat_id, "Send me a valid Pixeldrain link like https://pixeldrain.com/l/ID or /u/ID")
+    elif len(links) > 1:
+        send_message(chat_id, "⚠️ Please send only **one Pixeldrain link** at a time.")
+    else:
+        # Only one link, process it
+        link = links[0]
+        try:
+            files = process_pixeldrain_link(link)
+            if not files:
+                send_message(chat_id, "⚠️ No files found in this link.")
+            else:
                 response_lines = []
                 for i, f in enumerate(files, 1):
                     line = (
@@ -123,7 +126,7 @@ def webhook(token):
                     )
                     response_lines.append(line)
 
-                # Telegram has a message limit (~4096 chars), split if needed
+                # Split message if too long
                 chunk_size = 3500
                 message = ""
                 for line in response_lines:
@@ -135,12 +138,26 @@ def webhook(token):
                         message += line_text
                 if message:
                     send_message(chat_id, message)
-            except Exception as e:
-                send_message(chat_id, f"⚠️ Error processing link: {e}")
+        except Exception as e:
+            send_message(chat_id, f"⚠️ Error processing link: {e}")
+
         else:
             send_message(chat_id, "Send me a valid Pixeldrain link like https://pixeldrain.com/l/ID or /u/ID")
 
     return jsonify(ok=True)
+
+def send_welcome(chat_id, username, user_id):
+    text = (
+        f'Hello <a href="tg://user?id={user_id}">{username}</a>!\n\n'
+        "Send your Pixeldrain URL to get the direct link(s) and thumbnail(s).\n"
+        "Example: https://pixeldrain.com/l/ID or /u/ID"
+    )
+    url = f"{BOT_API}/sendMessage"
+    requests.post(url, json={
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML"
+    })
 
 @app.route("/set_webhook", methods=["GET"])
 def set_webhook():
