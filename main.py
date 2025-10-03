@@ -40,7 +40,7 @@ def extract_files_from_viewer_data(html_text):
         data = json.loads(json_text)
         files = data.get("api_response", {}).get("files", [])
         results = []
-        for f in files[1:]:
+        for f in files:
             file_id = f.get("id")
             if not file_id:
                 continue
