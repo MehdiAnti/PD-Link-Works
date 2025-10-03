@@ -1,6 +1,6 @@
 # PD-Link-Works
 
-A Telegram bot that extracts direct download links and thumbnails from Pixeldrain URLs. Supports single file links (`/u/ID`) and gallery links (`/l/ID`).
+A Telegram bot that extracts direct download links and thumbnails from Pixeldrain and RedGifs URLs.
 
 Deployed on [Render.com](https://render.com) and kept alive using [UptimeRobot](https://uptimerobot.com/).
 
@@ -8,6 +8,7 @@ Deployed on [Render.com](https://render.com) and kept alive using [UptimeRobot](
 
 - `/start` and `/help` commands.
 - Processes single Pixeldrain file links and gallery links.
+- Processes single RedGifs file links.
 - Returns direct download links and thumbnail URLs.
 - Works on Render.com with uptime monitoring.
 
@@ -75,9 +76,14 @@ https://pixeldrain.com/u/ID
 https://pixeldrain.com/l/ID
 ```
 
+Or send a RedGifs link in private chat:
+```
+https://www.redgifs.com/watch/ID
+```
+
 The bot responds with:
   - Direct download links
-  - Thumbnail links (without Telegram preview)
+  - Thumbnail links
 
 Commands:
   - /start – Welcome message
@@ -85,7 +91,7 @@ Commands:
 
 ## Notes
 
-  - Only one Pixeldrain link per message.
+  - Only one link per message.
   - Works with galleries and single files.
 
 ## License
