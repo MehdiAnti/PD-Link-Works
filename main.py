@@ -38,7 +38,7 @@ def extract_files_from_viewer_data(html_text):
     json_text = match.group(1)
     try:
         data = json.loads(json_text)
-        files = data.get("api_response", {}).get("files", [])
+        files = data.get("api_response", {}).get("files") or []
         results = []
         for f in files:
             file_id = f.get("id")
@@ -68,6 +68,16 @@ def process_pixeldrain_link(link):
         html_text = fetch_html(link)
         return extract_files_from_viewer_data(html_text)
 
+def process_redgifs_link(link):
+    html_text = fetch_html(link)
+    headline_match = re.search(r'"headline":"(.*?)"', html_text)
+    title = headline_match.group(1) if headline_match else "No Title"
+    content_match = re.search(r'"contentUrl":"(.*?)"', html_text)
+    video_url = content_match.group(1).replace("-silent", "") if content_match else ""
+    thumb_match = re.search(r'"thumbnailUrl":"(.*?)"', html_text)
+    thumbnail_url = thumb_match.group(1) if thumb_match else ""
+    return {"title": title, "file_url": video_url, "thumbnail_url": thumbnail_url}
+
 @app.route("/webhook/<token>", methods=["POST"])
 def webhook(token):
     if token != TELEGRAM_TOKEN:
@@ -87,50 +97,67 @@ def webhook(token):
             "Send a valid Pixeldrain link in this format:\n"
             "https://pixeldrain.com/l/ID  -> Gallery link\n"
             "https://pixeldrain.com/u/ID  -> Single file link\n"
+            "Or send a RedGIFs link like https://www.redgifs.com/watch/ID\n"
             "I’ll reply with direct download links and thumbnails."
         )
         send_message(chat_id, help_text)
     else:
-        links = re.findall(r"(https://pixeldrain\.com/(?:l|u)/[A-Za-z0-9]+)", text)
-        if not links:
-            send_message(chat_id, "Send me a valid Pixeldrain link like https://pixeldrain.com/l/ID or /u/ID")
-        elif len(links) > 1:
-            send_message(chat_id, "⚠️ Please send only **one Pixeldrain link** at a time.")
-        else:
-            link = links[0]
-            try:
-                files = process_pixeldrain_link(link)
-                if not files:
-                    send_message(chat_id, "⚠️ No files found in this link.")
-                else:
-                    response_lines = []
-                    for i, f in enumerate(files, 1):
-                        line = (
-                            f"{i}. ID: {f['file_id']}\n"
-                            f"   File: {f['file_url']}\n"
-                            f"   Thumbnail: {f['thumbnail_url']}"
-                        )
-                        response_lines.append(line)
-                    chunk_size = 3500
-                    message = ""
-                    for line in response_lines:
-                        line_text = line + "\n\n"
-                        if len(message) + len(line_text) > chunk_size:
+        pixeldrain_links = re.findall(r"(https://pixeldrain\.com/(?:l|u)/[A-Za-z0-9]+)", text)
+        redgifs_links = re.findall(r"https?://(?:www\.)?redgifs\.com/watch/[A-Za-z0-9]+", text)
+        if pixeldrain_links:
+            if len(pixeldrain_links) > 1:
+                send_message(chat_id, "⚠️ Please send only one Pixeldrain link at a time.")
+            else:
+                link = pixeldrain_links[0]
+                try:
+                    files = process_pixeldrain_link(link)
+                    if not files:
+                        send_message(chat_id, "⚠️ No files found in this link.")
+                    else:
+                        response_lines = []
+                        for i, f in enumerate(files, 1):
+                            line = (
+                                f"{i}. ID: {f['file_id']}\n"
+                                f"   File: {f['file_url']}\n"
+                                f"   Thumbnail: {f['thumbnail_url']}"
+                            )
+                            response_lines.append(line)
+                        chunk_size = 3500
+                        message = ""
+                        for line in response_lines:
+                            line_text = line + "\n\n"
+                            if len(message) + len(line_text) > chunk_size:
+                                send_message(chat_id, message)
+                                message = line_text
+                            else:
+                                message += line_text
+                        if message:
                             send_message(chat_id, message)
-                            message = line_text
-                        else:
-                            message += line_text
-                    if message:
-                        send_message(chat_id, message)
+                except Exception as e:
+                    send_message(chat_id, f"⚠️ Error processing link: {e}")
+        elif redgifs_links:
+            link = redgifs_links[0]
+            try:
+                data = process_redgifs_link(link)
+                msg_text = (
+                    f"Title: {data['title']}\n\n"
+                    f"File:\n{data['file_url']}\n\n"
+                    f"Thumbnail:\n{data['thumbnail_url']}"
+                )
+                send_message(chat_id, msg_text)
             except Exception as e:
-                send_message(chat_id, f"⚠️ Error processing link: {e}")
+                send_message(chat_id, f"⚠️ Error processing RedGIF link: {e}")
+        else:
+            send_message(chat_id, "Send a valid Pixeldrain or RedGIFs link")
     return jsonify(ok=True)
 
 def send_welcome(chat_id, username, user_id):
     text = (
         f'Hello <a href="tg://user?id={user_id}">{username}</a>!\n\n'
-        "Send your Pixeldrain URL to get the direct link(s) and thumbnail(s).\n"
-        "Example: https://pixeldrain.com/l/ID or /u/ID"
+        "Send your Pixeldrain URL to get the direct link(s) and thumbnail(s),\n"
+        "or RedGIFs URL to get video and thumbnail.\n"
+        "Example: https://pixeldrain.com/l/ID or /u/ID\n"
+        "Example: https://www.redgifs.com/watch/ID"
     )
     url = f"{BOT_API}/sendMessage"
     requests.post(url, json={
