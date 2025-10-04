@@ -97,13 +97,16 @@ def webhook(token):
             "Send a valid Pixeldrain link in this format:\n"
             "https://pixeldrain.com/l/ID  -> Gallery link\n"
             "https://pixeldrain.com/u/ID  -> Single file link\n"
-            "Or send a RedGIFs link like https://www.redgifs.com/watch/ID\n"
+            "Or send a RedGIFs link like https://www.redgifs.com/watch/ID or v3.redgifs.com/watch/ID\n"
             "I’ll reply with direct download links and thumbnails."
         )
         send_message(chat_id, help_text)
     else:
         pixeldrain_links = re.findall(r"(https://pixeldrain\.com/(?:l|u)/[A-Za-z0-9]+)", text)
-        redgifs_links = re.findall(r"https?://(?:www\.)?redgifs\.com/watch/[A-Za-z0-9]+", text)
+        redgifs_links = re.findall(
+            r"https?://(?:www\.|v3\.)?redgifs\.com/watch/[A-Za-z0-9]+",
+            text
+        )
         if pixeldrain_links:
             if len(pixeldrain_links) > 1:
                 send_message(chat_id, "⚠️ Please send only one Pixeldrain link at a time.")
@@ -157,7 +160,7 @@ def send_welcome(chat_id, username, user_id):
         "Send your Pixeldrain URL to get the direct link(s) and thumbnail(s),\n"
         "or RedGIFs URL to get video and thumbnail.\n"
         "Example: https://pixeldrain.com/l/ID or /u/ID\n"
-        "Example: https://www.redgifs.com/watch/ID"
+        "Example: https://www.redgifs.com/watch/ID or v3.redgifs.com/watch/ID"
     )
     url = f"{BOT_API}/sendMessage"
     requests.post(url, json={
