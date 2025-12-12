@@ -38,25 +38,31 @@ def fetch_html(url):
         return None
 
 def extract_files_from_viewer_data(html_text):
-    pattern = r"window\.viewer_data\s*=\s*({.*?});\s*window\.user_authenticated"
+    pattern = r"window\.viewer_data\s*=\s*({.*?});"
     match = re.search(pattern, html_text, re.DOTALL)
     if not match:
         return []
+
     json_text = match.group(1)
+
     try:
         data = json.loads(json_text)
         files = data.get("api_response", {}).get("files") or []
         results = []
+
         for f in files:
             file_id = f.get("id")
             if not file_id:
                 continue
+
             results.append({
                 "file_id": file_id,
                 "file_url": f"https://pixeldrain.com/api/file/{file_id}",
                 "thumbnail_url": f"https://pixeldrain.com/api/file/{file_id}/thumbnail"
             })
+
         return results
+
     except json.JSONDecodeError:
         return []
 
