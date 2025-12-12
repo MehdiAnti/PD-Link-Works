@@ -37,51 +37,39 @@ def fetch_html(url):
     except requests.exceptions.RequestException:
         return None
 
-def extract_files_from_viewer_data(html_text):
-    pattern = r"window\.viewer_data\s*=\s*({.*?});"
-    match = re.search(pattern, html_text, re.DOTALL)
-    if not match:
-        return []
-
-    json_text = match.group(1)
-
-    try:
-        data = json.loads(json_text)
-        files = data.get("api_response", {}).get("files") or []
-        results = []
-
-        for f in files:
-            file_id = f.get("id")
-            if not file_id:
-                continue
-
-            results.append({
-                "file_id": file_id,
-                "file_url": f"https://pixeldrain.com/api/file/{file_id}",
-                "thumbnail_url": f"https://pixeldrain.com/api/file/{file_id}/thumbnail"
-            })
-
-        return results
-
-    except json.JSONDecodeError:
-        return []
-
 def process_pixeldrain_link(link):
     match = re.search(r"https://pixeldrain\.com/(l|u)/([A-Za-z0-9]+)", link)
     if not match:
         return []
     link_type, link_id = match.groups()
+
     if link_type == "u":
         return [{
             "file_id": link_id,
             "file_url": f"https://pixeldrain.com/api/file/{link_id}",
             "thumbnail_url": f"https://pixeldrain.com/api/file/{link_id}/thumbnail"
         }]
+
     elif link_type == "l":
-        html_text = fetch_html(link)
-        if not html_text:
+        api_url = f"https://pixeldrain.com/api/list/{link_id}"
+        try:
+            r = requests.get(api_url, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+        except:
             return []
-        return extract_files_from_viewer_data(html_text)
+
+        results = []
+        for f in data.get("files", []):
+            file_id = f.get("id")
+            if not file_id:
+                continue
+            results.append({
+                "file_id": file_id,
+                "file_url": f"https://pixeldrain.com/api/file/{file_id}",
+                "thumbnail_url": f"https://pixeldrain.com/api/file/{file_id}/thumbnail"
+            })
+        return results
 
 def process_redgifs_link(link):
     html_text = fetch_html(link)
