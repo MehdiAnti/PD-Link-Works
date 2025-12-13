@@ -44,28 +44,28 @@ def fetch_html(url):
         return None
 
 def extract_files_from_viewer_data(html_text):
-    pattern = r"window\.viewer_data\s*=\s*({.*?\"user_ads_enabled\":.*?});"
-    match = re.search(pattern, html_text, re.DOTALL)
+    match = re.search(r"window\.viewer_data\s*=\s*({.*?});", html_text, re.DOTALL)
     if not match:
         return []
 
     json_text = match.group(1)
-    try:
-        data = json.loads(json_text)
-        files = data.get("api_response", {}).get("files", [])
-        results = []
-        for f in files:
-            file_id = f.get("id")
-            if not file_id:
-                continue
-            results.append({
-                "file_id": file_id,
-                "file_url": f"https://pixeldrain.com/api/file/{file_id}",
-                "thumbnail_url": f"https://pixeldrain.com/api/file/{file_id}/thumbnail"
-            })
-        return results
-    except json.JSONDecodeError:
+
+    file_ids = re.findall(r'"id"\s*:\s*"([A-Za-z0-9]+)"', json_text)
+
+    if not file_ids:
         return []
+
+    file_ids = file_ids[1:]
+
+    results = []
+    for file_id in file_ids:
+        results.append({
+            "file_id": file_id,
+            "file_url": f"https://pixeldrain.com/api/file/{file_id}",
+            "thumbnail_url": f"https://pixeldrain.com/api/file/{file_id}/thumbnail"
+        })
+
+    return results
 
 def process_pixeldrain_link(link):
     match = re.search(r"https://pixeldrain\.com/(l|u)/([A-Za-z0-9]+)", link)
