@@ -1,7 +1,11 @@
 import os
 import re
+import json
+import logging
 import requests
 from flask import Flask, request, jsonify
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(message)s")
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 if not TELEGRAM_TOKEN:
@@ -20,8 +24,10 @@ def health():
     return "OK", 200
 
 def send_message(chat_id, text):
-    url = f"{BOT_API}/sendMessage"
-    requests.post(url, json={"chat_id": chat_id, "text": text})
+    requests.post(
+        f"{BOT_API}/sendMessage",
+        json={"chat_id": chat_id, "text": text}
+    )
 
 def fetch_html(url):
     headers = {
@@ -35,16 +41,28 @@ def fetch_html(url):
         r = requests.get(url, headers=headers, timeout=15)
         r.raise_for_status()
         return r.text
-    except requests.RequestException:
+    except Exception as e:
+        logging.error(f"[FETCH_HTML] {url} → {e}")
         return None
 
-def extract_pixeldrain_ids_from_html(html_text):
-    ids = re.findall(r"/file/([A-Za-z0-9]{8})/info", html_text)
-
+def extract_ids_from_html(html):
+    ids = re.findall(r"/file/([A-Za-z0-9]{8})/info", html)
     seen = set()
     return [i for i in ids if not (i in seen or seen.add(i))]
 
-def process_pixeldrain_link(link):
+def fetch_ids_from_api(list_id):
+    api_url = f"https://pixeldrain.com/api/list/{list_id}"
+    try:
+        r = requests.get(api_url, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        files = data.get("files", [])
+        return data, [f["id"] for f in files if "id" in f]
+    except Exception as e:
+        logging.error(f"[PIXELDRAIN API ERROR] {e}")
+        return None, []
+
+def process_pixeldrain_link(link, chat_id):
     match = re.search(r"https://pixeldrain\.com/(l|u)/([A-Za-z0-9]+)", link)
     if not match:
         return []
@@ -58,39 +76,48 @@ def process_pixeldrain_link(link):
             "thumbnail_url": f"https://pixeldrain.com/api/file/{link_id}/thumbnail"
         }]
 
-    if link_type == "l":
-        html_text = fetch_html(link)
-        if not html_text:
-            return []
+    html = fetch_html(link)
+    if html:
+        ids = extract_ids_from_html(html)
+        if ids:
+            logging.info(f"[PIXELDRAIN HTML OK] {link_id} → {len(ids)} files")
+            return [{
+                "file_id": i,
+                "file_url": f"https://pixeldrain.com/api/file/{i}",
+                "thumbnail_url": f"https://pixeldrain.com/api/file/{i}/thumbnail"
+            } for i in ids]
 
-        ids = extract_pixeldrain_ids_from_html(html_text)
-        if not ids:
-            return []
+    logging.warning(f"[PIXELDRAIN HTML FAILED] {link_id} → trying API")
 
+    api_data, ids = fetch_ids_from_api(link_id)
+    if api_data:
+        short_api = json.dumps(api_data, indent=2)[:3500]
+        send_message(chat_id, f"[API fallback used]\n\n{short_api}")
+
+    if ids:
+        logging.info(f"[PIXELDRAIN API OK] {link_id} → {len(ids)} files")
         return [{
-            "file_id": fid,
-            "file_url": f"https://pixeldrain.com/api/file/{fid}",
-            "thumbnail_url": f"https://pixeldrain.com/api/file/{fid}/thumbnail"
-        } for fid in ids]
+            "file_id": i,
+            "file_url": f"https://pixeldrain.com/api/file/{i}",
+            "thumbnail_url": f"https://pixeldrain.com/api/file/{i}/thumbnail"
+        } for i in ids]
+
+    logging.error(f"[PIXELDRAIN FAILED] {link_id}")
+    return []
 
 def process_redgifs_link(link):
-    html_text = fetch_html(link)
-    if not html_text:
-        return {"title": "Error", "file_url": "", "thumbnail_url": ""}
+    html = fetch_html(link)
+    if not html:
+        return {"title": "", "file_url": "", "thumbnail_url": ""}
 
-    headline_match = re.search(r'"headline":"(.*?)"', html_text)
-    title = headline_match.group(1) if headline_match else "No Title"
-
-    content_match = re.search(r'"contentUrl":"(.*?)"', html_text)
-    video_url = content_match.group(1).replace("-silent", "") if content_match else ""
-
-    thumb_match = re.search(r'"thumbnailUrl":"(.*?)"', html_text)
-    thumbnail_url = thumb_match.group(1) if thumb_match else ""
+    title = re.search(r'"headline":"(.*?)"', html)
+    file_url = re.search(r'"contentUrl":"(.*?)"', html)
+    thumb = re.search(r'"thumbnailUrl":"(.*?)"', html)
 
     return {
-        "title": title,
-        "file_url": video_url,
-        "thumbnail_url": thumbnail_url
+        "title": title.group(1) if title else "No Title",
+        "file_url": file_url.group(1).replace("-silent", "") if file_url else "",
+        "thumbnail_url": thumb.group(1) if thumb else ""
     }
 
 def is_pixeldrain_link(text):
@@ -109,77 +136,37 @@ def webhook(token):
     chat_id = msg.get("chat", {}).get("id")
     text = msg.get("text", "")
 
+    logging.info(f"[USER] {chat_id} → {text}")
+
     if not chat_id:
         return jsonify(ok=False), 400
 
-    if text == "/start":
-        user_id = msg.get("from", {}).get("id")
-        username = msg.get("from", {}).get("first_name", "there")
-        send_welcome(chat_id, username, user_id)
+    pixeldrain_links = is_pixeldrain_link(text)
+    redgifs_links = is_redgifs_link(text)
 
-    elif text == "/help":
-        send_message(chat_id,
-            "Send a Pixeldrain link:\n"
-            "https://pixeldrain.com/l/ID (gallery)\n"
-            "https://pixeldrain.com/u/ID (single)\n\n"
-            "Or a RedGIFs link."
-        )
+    if pixeldrain_links:
+        files = process_pixeldrain_link(pixeldrain_links[0], chat_id)
+        if not files:
+            send_message(chat_id, "⚠️ No files found.")
+        else:
+            out = ""
+            for i, f in enumerate(files, 1):
+                out += (
+                    f"{i}. ID: {f['file_id']}\n"
+                    f"{f['file_url']}\n"
+                    f"{f['thumbnail_url']}\n\n"
+                )
+            for c in [out[i:i+3500] for i in range(0, len(out), 3500)]:
+                send_message(chat_id, c)
+
+    elif redgifs_links:
+        d = process_redgifs_link(redgifs_links[0])
+        send_message(chat_id, f"{d['file_url']}\n{d['thumbnail_url']}")
 
     else:
-        pixeldrain_links = is_pixeldrain_link(text)
-        redgifs_links = is_redgifs_link(text)
-
-        if pixeldrain_links:
-            link = pixeldrain_links[0]
-            files = process_pixeldrain_link(link)
-
-            if not files:
-                send_message(chat_id, "⚠️ No files found or link inaccessible.")
-            else:
-                response = ""
-                for i, f in enumerate(files, 1):
-                    response += (
-                        f"{i}. ID: {f['file_id']}\n"
-                        f"File: {f['file_url']}\n"
-                        f"Thumbnail: {f['thumbnail_url']}\n\n"
-                    )
-
-                for chunk in [response[i:i+3500] for i in range(0, len(response), 3500)]:
-                    send_message(chat_id, chunk)
-
-        elif redgifs_links:
-            data = process_redgifs_link(redgifs_links[0])
-            if not data["file_url"]:
-                send_message(chat_id, "⚠️ RedGIF link inaccessible.")
-            else:
-                send_message(chat_id,
-                    f"Title: {data['title']}\n\n"
-                    f"File:\n{data['file_url']}\n\n"
-                    f"Thumbnail:\n{data['thumbnail_url']}"
-                )
-
-        else:
-            send_message(chat_id, "Send a valid Pixeldrain or RedGIFs link.")
+        send_message(chat_id, "Send a Pixeldrain or RedGIFs link")
 
     return jsonify(ok=True)
-
-def send_welcome(chat_id, username, user_id):
-    text = (
-        f'Hello <a href="tg://user?id={user_id}">{username}</a>!\n\n'
-        "Send Pixeldrain or RedGIFs links to get direct files."
-    )
-    requests.post(f"{BOT_API}/sendMessage", json={
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "HTML"
-    })
-
-@app.route("/set_webhook", methods=["GET"])
-def set_webhook():
-    host = request.host_url.rstrip("/")
-    webhook_url = f"{host}/webhook/{TELEGRAM_TOKEN}"
-    resp = requests.post(f"{BOT_API}/setWebhook", data={"url": webhook_url})
-    return (resp.text, resp.status_code)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
