@@ -1,5 +1,5 @@
 # Use official Playwright Python image with browsers pre-installed
-FROM mcr.microsoft.com/playwright/python:1.45.0-focal
+FROM mcr.microsoft.com/playwright/python:latest
 
 # Set working directory
 WORKDIR /app
