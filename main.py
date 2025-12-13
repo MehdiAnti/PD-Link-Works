@@ -1,10 +1,7 @@
 import os
 import re
-import logging
 import requests
 from flask import Flask, request, jsonify
-
-logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(message)s")
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 if not TELEGRAM_TOKEN:
@@ -40,8 +37,7 @@ def fetch_html(url):
         r = requests.get(url, headers=headers, timeout=8)
         r.raise_for_status()
         return r.text
-    except Exception as e:
-        logging.error(f"[FETCH_HTML FAILED] {url} → {e}")
+    except:
         return None
 
 def extract_pixeldrain_ids_from_html(html):
@@ -65,15 +61,11 @@ def process_pixeldrain_link(link):
 
     html = fetch_html(link)
     if not html:
-        logging.warning(f"[PIXELDRAIN HTML EMPTY] {link_id}")
         return []
 
     ids = extract_pixeldrain_ids_from_html(html)
     if not ids:
-        logging.warning(f"[PIXELDRAIN NO IDS FOUND] {link_id}")
         return []
-
-    logging.info(f"[PIXELDRAIN OK] {link_id} → {len(ids)} files")
 
     return [{
         "file_id": fid,
@@ -100,10 +92,7 @@ def is_pixeldrain_link(text):
     return re.findall(r"https://pixeldrain\.com/(?:l|u)/[A-Za-z0-9]+", text)
 
 def is_redgifs_link(text):
-    return re.findall(
-        r"https?://(?:www\.|v3\.)?redgifs\.com/watch/[A-Za-z0-9]+",
-        text
-    )
+    return re.findall(r"https?://(?:www\.|v3\.)?redgifs\.com/watch/[A-Za-z0-9]+", text)
 
 @app.route("/webhook/<token>", methods=["POST"])
 def webhook(token):
@@ -114,8 +103,6 @@ def webhook(token):
     msg = update.get("message", {})
     chat_id = msg.get("chat", {}).get("id")
     text = msg.get("text", "")
-
-    logging.info(f"[USER] {chat_id} → {text}")
 
     if not chat_id:
         return jsonify(ok=False), 400
