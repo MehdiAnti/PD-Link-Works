@@ -38,7 +38,7 @@ def fetch_html(url):
         return None
 
 def extract_files_from_viewer_data(html_text):
-    pattern = r"window\.viewer_data\s*=\s*({.*?})\s*;"
+    pattern = r"window\.viewer_data\s*=\s*({.*?\"user_ads_enabled\":.*?});"
     match = re.search(pattern, html_text, re.DOTALL)
     if not match:
         return []
