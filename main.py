@@ -46,13 +46,15 @@ def fetch_html(url):
 def extract_files_from_viewer_data(html_text):
     match = re.search(r"window\.viewer_data\s*=\s*({.*?});", html_text, re.DOTALL)
     if not match:
+        print("[Pixeldrain Debug] No window.viewer_data found in HTML")
         return []
 
     json_text = match.group(1)
 
     file_ids = re.findall(r'"id"\s*:\s*"([A-Za-z0-9]+)"', json_text)
 
-    if not file_ids:
+    if not file_ids or len(file_ids) <= 1:
+        print(f"[Pixeldrain Debug] No file IDs found. Raw IDs: {file_ids}")
         return []
 
     file_ids = file_ids[1:]
@@ -65,7 +67,9 @@ def extract_files_from_viewer_data(html_text):
             "thumbnail_url": f"https://pixeldrain.com/api/file/{file_id}/thumbnail"
         })
 
+    print(f"[Pixeldrain Debug] Extracted IDs: {file_ids}")
     return results
+
 
 def process_pixeldrain_link(link):
     match = re.search(r"https://pixeldrain\.com/(l|u)/([A-Za-z0-9]+)", link)
