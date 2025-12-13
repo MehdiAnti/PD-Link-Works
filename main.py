@@ -4,6 +4,7 @@ import json
 import requests
 import logging
 from flask import Flask, request, jsonify
+from playwright.sync_api import sync_playwright
 
 logging.basicConfig(level=logging.INFO)
 
@@ -55,33 +56,28 @@ def process_pixeldrain_link(link):
             "thumbnail_url": f"https://pixeldrain.com/api/file/{link_id}/thumbnail"
         }]
     elif link_type == "l":
-        url = f"https://pixeldrain.com/api/list/{link_id}"
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            )
-        }
+        results = []
         try:
-            r = requests.get(url, headers=headers, timeout=10)
-            r.raise_for_status()
-            data = r.json()
-            files = data.get("files", [])
-            results = []
-            for f in files:
-                file_id = f.get("id")
-                if file_id:
-                    results.append({
-                        "file_id": file_id,
-                        "file_url": f"https://pixeldrain.com/api/file/{file_id}",
-                        "thumbnail_url": f"https://pixeldrain.com/api/file/{file_id}/thumbnail"
-                    })
-            logging.info(f"[Pixeldrain API] User sent: {link} → {len(results)} files found")
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page()
+                page.goto(link, timeout=15000)
+                data = page.evaluate("() => window.viewer_data")
+                browser.close()
+                files = data.get("api_response", {}).get("files", [])
+                for f in files:
+                    file_id = f.get("id")
+                    if file_id:
+                        results.append({
+                            "file_id": file_id,
+                            "file_url": f"https://pixeldrain.com/api/file/{file_id}",
+                            "thumbnail_url": f"https://pixeldrain.com/api/file/{file_id}/thumbnail"
+                        })
             return results
         except Exception as e:
-            logging.error(f"[Pixeldrain API Error] Link {link} → {e}")
+            logging.error(f"[Pixeldrain Playwright Error] Link {link} → {e}")
             return []
+
 
 def process_redgifs_link(link):
     html_text = fetch_html(link)
