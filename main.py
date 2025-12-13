@@ -38,14 +38,15 @@ def fetch_html(url):
         return None
 
 def extract_files_from_viewer_data(html_text):
-    pattern = r"window\.viewer_data\s*=\s*({.*?})"
+    pattern = r"window\.viewer_data\s*=\s*({.*?})\s*;"
     match = re.search(pattern, html_text, re.DOTALL)
     if not match:
         return []
+
     json_text = match.group(1)
     try:
         data = json.loads(json_text)
-        files = data.get("api_response", {}).get("files") or []
+        files = data.get("api_response", {}).get("files", [])
         results = []
         for f in files:
             file_id = f.get("id")
