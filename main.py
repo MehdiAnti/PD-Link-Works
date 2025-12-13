@@ -2,7 +2,10 @@ import os
 import re
 import json
 import requests
+import logging
 from flask import Flask, request, jsonify
+
+logging.basicConfig(level=logging.INFO)
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 if not TELEGRAM_TOKEN:
@@ -36,46 +39,15 @@ def fetch_html(url):
         r = requests.get(url, headers=headers, timeout=10)
         r.raise_for_status()
         return r.text
-    except requests.exceptions.Timeout:
-        return None
-    except requests.exceptions.HTTPError:
-        return None
     except requests.exceptions.RequestException:
         return None
-
-def extract_files_from_viewer_data(html_text):
-    match = re.search(r"window\.viewer_data\s*=\s*({.*?});", html_text, re.DOTALL)
-    if not match:
-        print("[Pixeldrain Debug] No window.viewer_data found in HTML")
-        return []
-
-    json_text = match.group(1)
-
-    file_ids = re.findall(r'"id"\s*:\s*"([A-Za-z0-9]+)"', json_text)
-
-    if not file_ids or len(file_ids) <= 1:
-        print(f"[Pixeldrain Debug] No file IDs found. Raw IDs: {file_ids}")
-        return []
-
-    file_ids = file_ids[1:]
-
-    results = []
-    for file_id in file_ids:
-        results.append({
-            "file_id": file_id,
-            "file_url": f"https://pixeldrain.com/api/file/{file_id}",
-            "thumbnail_url": f"https://pixeldrain.com/api/file/{file_id}/thumbnail"
-        })
-
-    print(f"[Pixeldrain Debug] Extracted IDs: {file_ids}")
-    return results
-
 
 def process_pixeldrain_link(link):
     match = re.search(r"https://pixeldrain\.com/(l|u)/([A-Za-z0-9]+)", link)
     if not match:
         return []
     link_type, link_id = match.groups()
+    
     if link_type == "u":
         return [{
             "file_id": link_id,
@@ -83,10 +55,33 @@ def process_pixeldrain_link(link):
             "thumbnail_url": f"https://pixeldrain.com/api/file/{link_id}/thumbnail"
         }]
     elif link_type == "l":
-        html_text = fetch_html(link)
-        if not html_text:
+        url = f"https://pixeldrain.com/api/list/{link_id}"
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            )
+        }
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            files = data.get("files", [])
+            results = []
+            for f in files:
+                file_id = f.get("id")
+                if file_id:
+                    results.append({
+                        "file_id": file_id,
+                        "file_url": f"https://pixeldrain.com/api/file/{file_id}",
+                        "thumbnail_url": f"https://pixeldrain.com/api/file/{file_id}/thumbnail"
+                    })
+            logging.info(f"[Pixeldrain API] User sent: {link} → {len(results)} files found")
+            return results
+        except Exception as e:
+            logging.error(f"[Pixeldrain API Error] Link {link} → {e}")
             return []
-        return extract_files_from_viewer_data(html_text)
 
 def process_redgifs_link(link):
     html_text = fetch_html(link)
@@ -139,29 +134,34 @@ def webhook(token):
                 send_message(chat_id, "⚠️ Please send only one Pixeldrain link at a time.")
             else:
                 link = pixeldrain_links[0]
-                files = process_pixeldrain_link(link)
-                if not files:
-                    send_message(chat_id, "⚠️ No files found or link inaccessible.")
-                else:
-                    response_lines = []
-                    for i, f in enumerate(files, 1):
-                        line = (
-                            f"{i}. ID: {f['file_id']}\n"
-                            f"   File: {f['file_url']}\n"
-                            f"   Thumbnail: {f['thumbnail_url']}"
-                        )
-                        response_lines.append(line)
-                    chunk_size = 3500
-                    message = ""
-                    for line in response_lines:
-                        line_text = line + "\n\n"
-                        if len(message) + len(line_text) > chunk_size:
+                try:
+                    files = process_pixeldrain_link(link)
+                    if not files:
+                        logging.error(f"[Pixeldrain] User sent: {link} → No files found")
+                        send_message(chat_id, "⚠️ No files found or link inaccessible.")
+                    else:
+                        response_lines = []
+                        for i, f in enumerate(files, 1):
+                            line = (
+                                f"{i}. ID: {f['file_id']}\n"
+                                f"   File: {f['file_url']}\n"
+                                f"   Thumbnail: {f['thumbnail_url']}"
+                            )
+                            response_lines.append(line)
+                        chunk_size = 3500
+                        message = ""
+                        for line in response_lines:
+                            line_text = line + "\n\n"
+                            if len(message) + len(line_text) > chunk_size:
+                                send_message(chat_id, message)
+                                message = line_text
+                            else:
+                                message += line_text
+                        if message:
                             send_message(chat_id, message)
-                            message = line_text
-                        else:
-                            message += line_text
-                    if message:
-                        send_message(chat_id, message)
+                except Exception as e:
+                    logging.error(f"[Pixeldrain Exception] Link {link} → {e}")
+                    send_message(chat_id, "⚠️ An unexpected error occurred while processing the link.")
         elif redgifs_links:
             link = redgifs_links[0]
             data = process_redgifs_link(link)
