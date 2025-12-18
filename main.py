@@ -94,10 +94,12 @@ def is_redgifs_link(text):
 def webhook(token):
     if token != TELEGRAM_TOKEN:
         return "forbidden", 403
+
     update = request.get_json(force=True)
     msg = update.get("message", {})
     chat_id = msg.get("chat", {}).get("id")
     text = msg.get("text", "")
+
     if not chat_id:
         return jsonify(ok=False), 400
 
@@ -105,6 +107,7 @@ def webhook(token):
         user_id = msg.get("from", {}).get("id")
         username = msg.get("from", {}).get("first_name", "there")
         send_welcome(chat_id, username, user_id)
+
     elif text == "/help":
         help_text = (
             "Send a valid Pixeldrain link in this format:\n"
@@ -114,42 +117,46 @@ def webhook(token):
             "I’ll reply with direct download links and thumbnails."
         )
         send_message(chat_id, help_text)
+
     else:
         pixeldrain_links = is_pixeldrain_link(text)
         redgifs_links = is_redgifs_link(text)
 
         if pixeldrain_links:
-            if len(pixeldrain_links) > 1:
-                send_message(chat_id, "⚠️ Please send only one Pixeldrain link at a time.")
-            else:
-                link = pixeldrain_links[0]
+            all_files = []
+            for link in pixeldrain_links:
                 files = process_pixeldrain_link(link)
-                if not files:
-                    send_message(chat_id, "⚠️ No files found or link inaccessible.")
-                else:
-                    response_lines = []
-                    for i, f in enumerate(files, 1):
-                        line = (
-                            f"{i}. ID: {f['file_id']}\n"
-                            f"   File: {f['file_url']}\n"
-                            f"   Thumbnail: {f['thumbnail_url']}"
-                        )
-                        response_lines.append(line)
-                    chunk_size = 3500
-                    message = ""
-                    for line in response_lines:
-                        line_text = line + "\n\n"
-                        if len(message) + len(line_text) > chunk_size:
-                            send_message(chat_id, message)
-                            message = line_text
-                        else:
-                            message += line_text
-                    if message:
+                if files:
+                    all_files.extend(files)
+
+            if not all_files:
+                send_message(chat_id, "⚠️ No files found or link inaccessible.")
+            else:
+                response_lines = []
+                for i, f in enumerate(all_files, 1):
+                    line = (
+                        f"{i}. ID: {f['file_id']}\n"
+                        f"   File: {f['file_url']}\n"
+                        f"   Thumbnail: {f['thumbnail_url']}"
+                    )
+                    response_lines.append(line)
+
+                chunk_size = 3500
+                message = ""
+                for line in response_lines:
+                    line_text = line + "\n\n"
+                    if len(message) + len(line_text) > chunk_size:
                         send_message(chat_id, message)
+                        message = line_text
+                    else:
+                        message += line_text
+                if message:
+                    send_message(chat_id, message)
+
         elif redgifs_links:
             link = redgifs_links[0]
             data = process_redgifs_link(link)
-            if not data['file_url']:
+            if not data["file_url"]:
                 send_message(chat_id, "⚠️ RedGIF link inaccessible or error occurred.")
             else:
                 msg_text = (
@@ -158,8 +165,10 @@ def webhook(token):
                     f"Thumbnail:\n{data['thumbnail_url']}"
                 )
                 send_message(chat_id, msg_text)
+
         else:
             send_message(chat_id, "Send a valid Pixeldrain or RedGIFs link")
+
     return jsonify(ok=True)
 
 def send_welcome(chat_id, username, user_id):
@@ -170,12 +179,10 @@ def send_welcome(chat_id, username, user_id):
         "Example: https://pixeldrain.com/l/ID or /u/ID\n"
         "Example: https://www.redgifs.com/watch/ID or v3.redgifs.com/watch/ID"
     )
-    url = f"{BOT_API}/sendMessage"
-    requests.post(url, json={
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "HTML"
-    })
+    requests.post(
+        f"{BOT_API}/sendMessage",
+        json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+    )
 
 @app.route("/set_webhook", methods=["GET"])
 def set_webhook():
